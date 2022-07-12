@@ -1,0 +1,101 @@
+// Delimitacion del area de estudio
+Map.addLayer(lim, {color:'#ff1cdb'}, 'Límite', true, 0.5);
+Map.centerObject(lim,10);
+
+// Seleccion de imagenes 
+
+  // Seleccion de coleccion
+  //Función enmascarrar nube sentinel
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000)
+   .copyProperties(image, ["system:time_start"]);
+}
+
+//Función NDVI
+var ndvi = function(image){
+  var ndvi = image.normalizedDifference(["B8","B4"]).rename("NDVI");
+  return image.addBands(ndvi);
+};
+
+// Predictores 
+ var addind = function(image) {
+     var ndvi = image.normalizedDifference(['B8','B4']).rename('NDVI').double()// Normalized Difference Vegetation Index
+     var ndwi = image.normalizedDifference(['B3','B8']).rename('NDWI').double()// Normalized Difference Water Index
+     var ndbi = image.normalizedDifference(['B12','B8']).rename('NDBI').double()// Normalized Difference Built Index
+     return ndvi.addBands(ndwi).addBands(ndbi);
+   };
+
+
+//Funcion de corte
+function corte(image){
+  return image.clip(lim); //es necesario declarar la capa de corte antes e incluirla en la funcion 
+}
+
+// Map the function over one year of data and take the median.
+// Load Sentinel-2 TOA reflectance data.
+//Filtramos nuestra imagen
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR')
+                  .filterDate('2020-11-01', '2021-12-31')//Filtro de fechas
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))//Filtro por metadata
+                  .filterBounds(lim) //Filtro por zona
+                  //.map(ndvi) //Agregamos NDVI como una banda
+                  .map(corte)
+                  .map(maskS2clouds);
+print(dataset);
+
+// Display the results.
+Map.addLayer(dataset, {bands: ['B4', 'B3', 'B2'], min: 0.01, max: 0.2}, 'ANTOFAGASTA');
+Map.centerObject(lim);
+
+  
+////  Aplica función addind sobre coleccion cloudMaskedSR 
+  var ind= dataset.map(addind); 
+  print(ind, 'Índices');
+  
+////  Aplicacion de reductor a  índices
+  var ind_reductor = ind.max().clip(lim);
+  print(ind_reductor, 'Mediana Indices');
+Map.addLayer(ind_reductor, {bands: ['NDVI'], min:-0.5, max: 1}, 'NDVI_reductor');
+  
+//// Cálculo mediana colección Sentinel 2 
+  var Sentinel_mediana = dataset.median()// calcula mediana de cada pixel de la colección 
+    .clip(lim); // corta por objeto lim
+    
+//// Variables topográficas 
+  var dem = ee.Image('USGS/SRTMGL1_003');
+  var topo = ee.Terrain.products(dem).clip(lim);
+print (topo, 'variables topograficas')
+  
+Map.addLayer(topo, {bands: ['slope']}, 'pendiente');
+
+////  Unir bandas S2 + índices + topográficas
+  var bandas = ee.Image.cat([Sentinel_mediana,ind_reductor,topo]);
+  var bandas_ =['B1','B2','B3','B4','B5','B6','B7','B8','B9','B11','B12'];
+
+ 
+Map.addLayer(Sentinel_mediana, {bands: ['B4','B3','B2'], min: 0.02, max: 0.36}, 'ANTOFAGASTA');
+Map.centerObject(lim);
+ 
+////////////
+///Exportar imagenes
+////////////
+
+Export.image.toDrive({
+  image: Sentinel_mediana ,
+  fileNamePrefix: "ANTOFAGASTA", 
+  region: lim ,
+  scale: 10 , 
+  maxPixels: 1e13,
+  crs:'EPSG:32719'
+}); 
