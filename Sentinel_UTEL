@@ -45,9 +45,9 @@ function corte(image){
 // Load Sentinel-2 TOA reflectance data.
 //Filtramos nuestra imagen
 var dataset = ee.ImageCollection('COPERNICUS/S2_SR')
-                  .filterDate('2020-11-01', '2021-12-31')//Filtro de fechas
+                  .filterDate('2018-01-01', '2021-12-31')//Filtro de fechas
                   // Pre-filter to get less cloudy granules.
-                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))//Filtro por metadata
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 5))//Filtro por metadata
                   .filterBounds(lim) //Filtro por zona
                   //.map(ndvi) //Agregamos NDVI como una banda
                   .map(corte)
@@ -55,7 +55,7 @@ var dataset = ee.ImageCollection('COPERNICUS/S2_SR')
 print(dataset);
 
 // Display the results.
-Map.addLayer(dataset, {bands: ['B4', 'B3', 'B2'], min: 0.01, max: 0.2}, 'ANTOFAGASTA');
+Map.addLayer(dataset, {bands: ['B12', 'B8', 'B2'], min: 0.01, max: 0.2}, 'ANTOFAGASTA');
 Map.centerObject(lim);
 
   
@@ -64,7 +64,7 @@ Map.centerObject(lim);
   print(ind, 'Índices');
   
 ////  Aplicacion de reductor a  índices
-  var ind_reductor = ind.max().clip(lim);
+  var ind_reductor = ind.median().clip(lim);
   print(ind_reductor, 'Mediana Indices');
 Map.addLayer(ind_reductor, {bands: ['NDVI'], min:-0.5, max: 1}, 'NDVI_reductor');
   
@@ -81,21 +81,25 @@ Map.addLayer(topo, {bands: ['slope']}, 'pendiente');
 
 ////  Unir bandas S2 + índices + topográficas
   var bandas = ee.Image.cat([Sentinel_mediana,ind_reductor,topo]);
-  var bandas_ =['B1','B2','B3','B4','B5','B6','B7','B8','B9','B11','B12'];
+  var bandas_ =['B1','B2','B3','B4','B5','B6','B7','B8','B9','B11','B12','NDVI','NDWI','NDBI','slope'];
+  print(bandas, 'bandas');
+  print(bandas_,'bandas_');
+Map.addLayer(bandas,bandas_, 'test');
 
- 
-Map.addLayer(Sentinel_mediana, {bands: ['B4','B3','B2'], min: 0.02, max: 0.36}, 'ANTOFAGASTA');
+Map.addLayer(Sentinel_mediana, {bands: ['B4','B3','B2'], min: 0.02, max: 0.36}, 'ANTOFAGASTA_RESULTADO');
 Map.centerObject(lim);
  
 ////////////
 ///Exportar imagenes
 ////////////
 
+
 Export.image.toDrive({
-  image: Sentinel_mediana ,
+  image: Sentinel_mediana,
   fileNamePrefix: "ANTOFAGASTA", 
   region: lim ,
   scale: 10 , 
   maxPixels: 1e13,
   crs:'EPSG:32719'
 }); 
+ 
